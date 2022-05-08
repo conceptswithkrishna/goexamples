@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -78,6 +79,12 @@ func (s *Server) HandleCreateUsers(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		got := s.db.Get(s.ctx, u.Name)
+		if got != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(fmt.Sprintf("User already exists: %v", u.Name)))
+			return
+		}
 
 		log.Printf("Create User: %v", u.Name)
 		// Write to database.
@@ -115,40 +122,62 @@ func (s *Server) HandleUsers(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Add("Content-Type", "application/json")
 		w.Write(msg)
-		// 	case http.MethodPatch:
-		// 		// Partial updates.
-		// 		// Check that the input is JSON.
-		// 		if contentType := r.Header.Get("Content-Type"); contentType != "application/json" {
-		// 			w.WriteHeader(http.StatusUnsupportedMediaType)
-		// 			return
-		// 		}
-		// 		body, err := ioutil.ReadAll(r.Body)
-		// 		if err != nil {
-		// 			log.Printf("Could not read request body: %v", err)
-		// 			w.WriteHeader(http.StatusInternalServerError) // HTTP 500
-		// 			return
-		// 		}
-		// 		defer r.Body.Close()
+	case http.MethodPatch:
+		// Partial updates.
+		// Check that the input is JSON.
+		if contentType := r.Header.Get("Content-Type"); contentType != "application/json" {
+			w.WriteHeader(http.StatusUnsupportedMediaType)
+			return
+		}
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			log.Printf("Could not read request body: %v", err)
+			w.WriteHeader(http.StatusInternalServerError) // HTTP 500
+			return
+		}
+		defer r.Body.Close()
 
-		// 		// Unmarshal the body.
-		// 		var u user
-		// 		err = json.Unmarshal(body, &u)
-		// 		if err != nil {
-		// 			log.Printf("Could not unmarshal request body: %v", err)
-		// 			w.WriteHeader(http.StatusBadRequest) // HTTP 400
-		// 			return
-		// 		}
+		// Unmarshal the body.
+		var u database.User
+		err = json.Unmarshal(body, &u)
+		if err != nil {
+			log.Printf("Could not unmarshal request body: %v", err)
+			w.WriteHeader(http.StatusBadRequest) // HTTP 400
+			return
+		}
 
-		// 		log.Printf("Update user: %s", name)
+		// Validation:
+		// 1. User Name should not be empty.
+		// 2. User must not exist in order to be created.
+		if u.Name == "" {
+			log.Print("Empty username")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		got := s.db.Get(s.ctx, u.Name)
+		if got == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 
-		// 		userinfo := s.users[name]
-		// 		if u.Age != 0 {
-		// 			userinfo.age = u.Age
-		// 		}
-		// 		if u.Email != "" {
-		// 			userinfo.email = u.Email
-		// 		}
-		// 		s.users[name] = userinfo
+		log.Printf("Update user: %s", name)
+
+		user, err := s.db.Update(s.ctx, u)
+		if err != nil {
+			log.Printf("Could not update database: %v", err)
+			w.WriteHeader(http.StatusInternalServerError) // HTTP 500
+			return
+		}
+		// Return updated value.
+		msg, err := json.Marshal(user)
+		if err != nil {
+			log.Printf("Could not marshal request: %v", err)
+			w.WriteHeader(http.StatusInternalServerError) // HTTP 500
+			return
+		}
+		w.Header().Add("Content-Type", "application/json")
+		w.Write(msg)
+
 		// 	case http.MethodDelete:
 		// 		log.Printf("Delete user: %s", name)
 		// 		delete(s.users, name)

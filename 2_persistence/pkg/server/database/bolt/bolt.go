@@ -94,3 +94,34 @@ func (b *Bolt) Get(ctx context.Context, name string) (user *database.User) {
 	user = &u
 	return
 }
+
+// Update implements the Database interface.
+func (b *Bolt) Update(ctx context.Context, user database.User) (*database.User, error) {
+	var raw []byte
+	b.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketName))
+		raw = b.Get([]byte(user.Name))
+		return nil
+	})
+	var current database.User
+	err := json.Unmarshal(raw, &current)
+	if err != nil {
+		log.Fatalf("Database corruption: %v", err)
+	}
+	current.Age = user.Age
+	current.Email = user.Email
+	current.Name = user.Name
+
+	// Write back.
+	v, err := json.Marshal(current)
+	if err != nil {
+		panic(fmt.Sprintf("could not marshal user: %v", err))
+	}
+	err = b.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketName))
+		err := b.Put([]byte(user.Name), v)
+		return err
+	})
+
+	return &current, nil
+}
