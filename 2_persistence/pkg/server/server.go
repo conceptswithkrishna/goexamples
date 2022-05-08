@@ -1,12 +1,14 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"log"
 	"net/http"
 
 	"github.com/KrishnaIyer/goexamples/2_persistence/pkg/server/database"
+	"github.com/gorilla/mux"
 )
 
 var indexPage = `
@@ -19,22 +21,17 @@ var indexPage = `
 </html>
 `
 
-// user represents the JSON value that's sent as a response to a request.
-type user struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
-	Age   int    `json:"age"`
-}
-
 // Server is an HTTP server.
 type Server struct {
-	db database.Database
+	ctx context.Context
+	db  database.Database
 }
 
 // New is a new server.
-func New(db database.Database) *Server {
+func New(ctx context.Context, db database.Database) *Server {
 	return &Server{
-		db: db,
+		ctx: ctx,
+		db:  db,
 	}
 }
 
@@ -59,93 +56,103 @@ func (s *Server) HandleCreateUsers(w http.ResponseWriter, r *http.Request) {
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			log.Printf("Could not read request body: %v", err)
-			w.WriteHeader(http.StatusInternalServerError) // HTTP 500
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		defer r.Body.Close()
 
 		// Unmarshal the body.
-		var u user
+		var u database.User
 		err = json.Unmarshal(body, &u)
 		if err != nil {
 			log.Printf("Could not unmarshal request body: %v", err)
-			w.WriteHeader(http.StatusBadRequest) // HTTP 400
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		// Validation:
+		// 1. User Name should not be empty.
+		// 2. User must not exist in order to be created.
+		if u.Name == "" {
+			log.Print("Empty username")
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
 		log.Printf("Create User: %v", u.Name)
 		// Write to database.
+		err = s.db.Create(s.ctx, u)
+		if err != nil {
+			log.Printf("Could not create user: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 
 	default:
-		w.WriteHeader(http.StatusMethodNotAllowed) // HTTP 415
+		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }
 
 // HandleUsers handles the `/users/{name}` request.
 func (s *Server) HandleUsers(w http.ResponseWriter, r *http.Request) {
-	// 	// Fetch the name from the params. Common for all methods of this route.
-	// 	params := mux.Vars(r)
-	// 	name := params["name"]
-	// 	u, ok := s.users[name]
-	// 	if !ok {
-	// 		w.WriteHeader(http.StatusNotFound)
-	// 		return
-	// 	}
+	// Fetch the name from the params. Common for all methods of this route.
+	params := mux.Vars(r)
+	name := params["name"]
 
-	// 	switch r.Method {
-	// 	case http.MethodGet:
-	// 		ret := user{
-	// 			Name:  name,
-	// 			Email: u.email,
-	// 			Age:   u.age,
-	// 		}
-	// 		msg, err := json.Marshal(ret)
-	// 		if err != nil {
-	// 			log.Printf("Could not marshal request: %v", err)
-	// 			w.WriteHeader(http.StatusInternalServerError) // HTTP 500
-	// 			return
-	// 		}
-	// 		log.Printf("Get user: %s", name)
-	// 		w.Header().Add("Content-Type", "application/json")
-	// 		w.Write(msg)
-	// 	case http.MethodPatch:
-	// 		// Partial updates.
-	// 		// Check that the input is JSON.
-	// 		if contentType := r.Header.Get("Content-Type"); contentType != "application/json" {
-	// 			w.WriteHeader(http.StatusUnsupportedMediaType)
-	// 			return
-	// 		}
-	// 		body, err := ioutil.ReadAll(r.Body)
-	// 		if err != nil {
-	// 			log.Printf("Could not read request body: %v", err)
-	// 			w.WriteHeader(http.StatusInternalServerError) // HTTP 500
-	// 			return
-	// 		}
-	// 		defer r.Body.Close()
+	switch r.Method {
+	case http.MethodGet:
+		log.Printf("Get user: %s", name)
+		user := s.db.Get(s.ctx, name)
+		if user == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		msg, err := json.Marshal(user)
+		if err != nil {
+			log.Printf("Could not marshal request: %v", err)
+			w.WriteHeader(http.StatusInternalServerError) // HTTP 500
+			return
+		}
+		w.Header().Add("Content-Type", "application/json")
+		w.Write(msg)
+		// 	case http.MethodPatch:
+		// 		// Partial updates.
+		// 		// Check that the input is JSON.
+		// 		if contentType := r.Header.Get("Content-Type"); contentType != "application/json" {
+		// 			w.WriteHeader(http.StatusUnsupportedMediaType)
+		// 			return
+		// 		}
+		// 		body, err := ioutil.ReadAll(r.Body)
+		// 		if err != nil {
+		// 			log.Printf("Could not read request body: %v", err)
+		// 			w.WriteHeader(http.StatusInternalServerError) // HTTP 500
+		// 			return
+		// 		}
+		// 		defer r.Body.Close()
 
-	// 		// Unmarshal the body.
-	// 		var u user
-	// 		err = json.Unmarshal(body, &u)
-	// 		if err != nil {
-	// 			log.Printf("Could not unmarshal request body: %v", err)
-	// 			w.WriteHeader(http.StatusBadRequest) // HTTP 400
-	// 			return
-	// 		}
+		// 		// Unmarshal the body.
+		// 		var u user
+		// 		err = json.Unmarshal(body, &u)
+		// 		if err != nil {
+		// 			log.Printf("Could not unmarshal request body: %v", err)
+		// 			w.WriteHeader(http.StatusBadRequest) // HTTP 400
+		// 			return
+		// 		}
 
-	// 		log.Printf("Update user: %s", name)
+		// 		log.Printf("Update user: %s", name)
 
-	// 		userinfo := s.users[name]
-	// 		if u.Age != 0 {
-	// 			userinfo.age = u.Age
-	// 		}
-	// 		if u.Email != "" {
-	// 			userinfo.email = u.Email
-	// 		}
-	// 		s.users[name] = userinfo
-	// 	case http.MethodDelete:
-	// 		log.Printf("Delete user: %s", name)
-	// 		delete(s.users, name)
-	// 	default:
-	// 		w.WriteHeader(http.StatusMethodNotAllowed) // HTTP 415
-	// 	}
+		// 		userinfo := s.users[name]
+		// 		if u.Age != 0 {
+		// 			userinfo.age = u.Age
+		// 		}
+		// 		if u.Email != "" {
+		// 			userinfo.email = u.Email
+		// 		}
+		// 		s.users[name] = userinfo
+		// 	case http.MethodDelete:
+		// 		log.Printf("Delete user: %s", name)
+		// 		delete(s.users, name)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed) // HTTP 415
+	}
 }

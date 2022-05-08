@@ -2,8 +2,11 @@ package bolt
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 
+	"github.com/KrishnaIyer/goexamples/2_persistence/pkg/server/database"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -42,6 +45,11 @@ func New(ctx context.Context, directory string) (*Bolt, error) {
 	}, nil
 }
 
+type userinfo struct {
+	Email string `json:"email"`
+	Age   int    `json:"age"`
+}
+
 // Close closes the database.
 // Make sure to close the database once used.
 func (b *Bolt) Close(ctx context.Context) {
@@ -49,9 +57,40 @@ func (b *Bolt) Close(ctx context.Context) {
 }
 
 // Create implements the Database interface.
-func (b *Bolt) Create(ctx context.Context, data []byte) error {
+func (b *Bolt) Create(ctx context.Context, user database.User) error {
+	userinfo := userinfo{
+		Email: user.Email,
+		Age:   user.Age,
+	}
 
-	fmt.Println(string(data))
-
+	v, err := json.Marshal(userinfo)
+	if err != nil {
+		return err
+	}
+	b.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketName))
+		err := b.Put([]byte(user.Name), v)
+		return err
+	})
 	return nil
+}
+
+// Get implements the Database interface.
+func (b *Bolt) Get(ctx context.Context, name string) (user *database.User) {
+	var raw []byte
+	b.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketName))
+		raw = b.Get([]byte(name))
+		return nil
+	})
+	if len(raw) == 0 {
+		return
+	}
+	var u database.User
+	err := json.Unmarshal(raw, &u)
+	if err != nil {
+		log.Fatalf("Database corruption: %v", err)
+	}
+	user = &u
+	return
 }

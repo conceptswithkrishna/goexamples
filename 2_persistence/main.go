@@ -23,7 +23,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to start database: %v", err)
 	}
-	srv := server.New(b)
+	srv := server.New(ctx, b)
 
 	r.HandleFunc("/", srv.HandleIndex)
 	r.HandleFunc("/users/create", srv.HandleCreateUsers)
