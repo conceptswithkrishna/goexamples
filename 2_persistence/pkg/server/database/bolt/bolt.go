@@ -125,3 +125,12 @@ func (b *Bolt) Update(ctx context.Context, user database.User) (*database.User, 
 
 	return &current, nil
 }
+
+// Delete implements the Database interface.
+func (b *Bolt) Delete(ctx context.Context, name string) error {
+	return b.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketName))
+		err := b.Delete([]byte(name))
+		return err
+	})
+}

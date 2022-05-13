@@ -23,6 +23,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to start database: %v", err)
 	}
+	defer b.Close(ctx)
 	srv := server.New(ctx, b)
 
 	r.HandleFunc("/", srv.HandleIndex)

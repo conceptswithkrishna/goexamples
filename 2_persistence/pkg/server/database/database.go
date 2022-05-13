@@ -16,4 +16,5 @@ type Database interface {
 	Get(ctx context.Context, name string) *User
 	// Update updates a given user (if found) and returns the updated value.
 	Update(ctx context.Context, user User) (*User, error)
+	Delete(ctx context.Context, name string) error
 }
