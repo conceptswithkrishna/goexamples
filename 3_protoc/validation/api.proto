@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package example;
+
+import "github.com/envoyproxy/protoc-gen-validate/validate/validate.proto";
+
+option go_package = "go.krishnaiyer.dev/example/validation";
+
+message SearchRequest {
+  string query = 1;
+  int32 page_number = 2;
+  int32 result_per_page = 3 [(validate.rules).int32.lte = 10];
+}
